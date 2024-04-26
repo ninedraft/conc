@@ -1,18 +1,20 @@
-package pool
+package pool_test
 
 import (
 	"fmt"
-	"sort"
+	"math/rand"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/sourcegraph/conc/pool"
+
 	"github.com/stretchr/testify/require"
 )
 
 func ExampleResultPool() {
-	p := NewWithResults[int]()
+	p := pool.NewWithResults[int]()
 	for i := 0; i < 10; i++ {
 		i := i
 		p.Go(func() int {
@@ -20,8 +22,6 @@ func ExampleResultPool() {
 		})
 	}
 	res := p.Wait()
-	// Result order is nondeterministic, so sort them first
-	sort.Ints(res)
 	fmt.Println(res)
 
 	// Output:
@@ -34,14 +34,14 @@ func TestResultGroup(t *testing.T) {
 	t.Run("panics on configuration after init", func(t *testing.T) {
 		t.Run("before wait", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]()
+			g := pool.NewWithResults[int]()
 			g.Go(func() int { return 0 })
 			require.Panics(t, func() { g.WithMaxGoroutines(10) })
 		})
 
 		t.Run("after wait", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]()
+			g := pool.NewWithResults[int]()
 			g.Go(func() int { return 0 })
 			_ = g.Wait()
 			require.Panics(t, func() { g.WithMaxGoroutines(10) })
@@ -50,7 +50,7 @@ func TestResultGroup(t *testing.T) {
 
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
-		g := NewWithResults[int]()
+		g := pool.NewWithResults[int]()
 		expected := []int{}
 		for i := 0; i < 100; i++ {
 			i := i
@@ -60,15 +60,34 @@ func TestResultGroup(t *testing.T) {
 			})
 		}
 		res := g.Wait()
-		sort.Ints(res)
 		require.Equal(t, expected, res)
+	})
+
+	t.Run("deterministic order", func(t *testing.T) {
+		t.Parallel()
+		p := pool.NewWithResults[int]()
+		results := make([]int, 100)
+		for i := 0; i < 100; i++ {
+			results[i] = i
+		}
+		for _, result := range results {
+			result := result
+			p.Go(func() int {
+				// Add a random sleep to make it exceedingly unlikely that the
+				// results are returned in the order they are submitted.
+				time.Sleep(time.Duration(rand.Int()%100) * time.Millisecond)
+				return result
+			})
+		}
+		got := p.Wait()
+		require.Equal(t, results, got)
 	})
 
 	t.Run("limit", func(t *testing.T) {
 		t.Parallel()
 		for _, maxGoroutines := range []int{1, 10, 100} {
 			t.Run(strconv.Itoa(maxGoroutines), func(t *testing.T) {
-				g := NewWithResults[int]().WithMaxGoroutines(maxGoroutines)
+				g := pool.NewWithResults[int]().WithMaxGoroutines(maxGoroutines)
 
 				var currentConcurrent atomic.Int64
 				var errCount atomic.Int64
@@ -88,11 +107,23 @@ func TestResultGroup(t *testing.T) {
 					})
 				}
 				res := g.Wait()
-				sort.Ints(res)
 				require.Equal(t, expected, res)
 				require.Equal(t, int64(0), errCount.Load())
 				require.Equal(t, int64(0), currentConcurrent.Load())
 			})
 		}
+	})
+
+	t.Run("reuse", func(t *testing.T) {
+		// Test for https://github.com/sourcegraph/conc/issues/128
+		p := pool.NewWithResults[int]()
+
+		p.Go(func() int { return 1 })
+		results1 := p.Wait()
+		require.Equal(t, []int{1}, results1)
+
+		p.Go(func() int { return 2 })
+		results2 := p.Wait()
+		require.Equal(t, []int{2}, results2)
 	})
 }

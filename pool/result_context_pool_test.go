@@ -1,14 +1,15 @@
-package pool
+package pool_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sourcegraph/conc/pool"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,14 +24,14 @@ func TestResultContextPool(t *testing.T) {
 	t.Run("panics on configuration after init", func(t *testing.T) {
 		t.Run("before wait", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]().WithContext(context.Background())
+			g := pool.NewWithResults[int]().WithContext(context.Background())
 			g.Go(func(context.Context) (int, error) { return 0, nil })
 			require.Panics(t, func() { g.WithMaxGoroutines(10) })
 		})
 
 		t.Run("after wait", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]().WithContext(context.Background())
+			g := pool.NewWithResults[int]().WithContext(context.Background())
 			g.Go(func(context.Context) (int, error) { return 0, nil })
 			_, _ = g.Wait()
 			require.Panics(t, func() { g.WithMaxGoroutines(10) })
@@ -42,7 +43,7 @@ func TestResultContextPool(t *testing.T) {
 		bgctx := context.Background()
 		t.Run("wait returns no error if no errors", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]().WithContext(bgctx)
+			g := pool.NewWithResults[int]().WithContext(bgctx)
 			g.Go(func(context.Context) (int, error) { return 0, nil })
 			res, err := g.Wait()
 			require.Len(t, res, 1)
@@ -51,7 +52,7 @@ func TestResultContextPool(t *testing.T) {
 
 		t.Run("wait error if func returns error", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]().WithContext(bgctx)
+			g := pool.NewWithResults[int]().WithContext(bgctx)
 			g.Go(func(context.Context) (int, error) { return 0, err1 })
 			res, err := g.Wait()
 			require.Len(t, res, 0)
@@ -60,7 +61,7 @@ func TestResultContextPool(t *testing.T) {
 
 		t.Run("wait error is all returned errors", func(t *testing.T) {
 			t.Parallel()
-			g := NewWithResults[int]().WithErrors().WithContext(bgctx)
+			g := pool.NewWithResults[int]().WithErrors().WithContext(bgctx)
 			g.Go(func(context.Context) (int, error) { return 0, err1 })
 			g.Go(func(context.Context) (int, error) { return 0, nil })
 			g.Go(func(context.Context) (int, error) { return 0, err2 })
@@ -74,7 +75,7 @@ func TestResultContextPool(t *testing.T) {
 	t.Run("context cancel propagates", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(context.Background())
-		g := NewWithResults[int]().WithContext(ctx)
+		g := pool.NewWithResults[int]().WithContext(ctx)
 		g.Go(func(ctx context.Context) (int, error) {
 			<-ctx.Done()
 			return 0, ctx.Err()
@@ -87,7 +88,7 @@ func TestResultContextPool(t *testing.T) {
 
 	t.Run("WithCancelOnError", func(t *testing.T) {
 		t.Parallel()
-		g := NewWithResults[int]().WithContext(context.Background()).WithCancelOnError()
+		g := pool.NewWithResults[int]().WithContext(context.Background()).WithCancelOnError()
 		g.Go(func(ctx context.Context) (int, error) {
 			<-ctx.Done()
 			return 0, ctx.Err()
@@ -101,9 +102,25 @@ func TestResultContextPool(t *testing.T) {
 		require.ErrorIs(t, err, err1)
 	})
 
+	t.Run("WithFailFast", func(t *testing.T) {
+		t.Parallel()
+		p := pool.NewWithResults[int]().WithContext(context.Background()).WithFailFast()
+		p.Go(func(ctx context.Context) (int, error) {
+			return 0, err1
+		})
+		p.Go(func(ctx context.Context) (int, error) {
+			<-ctx.Done()
+			return 1, ctx.Err()
+		})
+		results, err := p.Wait()
+		require.ErrorIs(t, err, err1)
+		require.NotErrorIs(t, err, context.Canceled)
+		require.Empty(t, results)
+	})
+
 	t.Run("WithCancelOnError and panic", func(t *testing.T) {
 		t.Parallel()
-		p := NewWithResults[int]().
+		p := pool.NewWithResults[int]().
 			WithContext(context.Background()).
 			WithCancelOnError()
 		var cancelledTasks atomic.Int64
@@ -126,7 +143,7 @@ func TestResultContextPool(t *testing.T) {
 
 	t.Run("no WithCancelOnError", func(t *testing.T) {
 		t.Parallel()
-		g := NewWithResults[int]().WithContext(context.Background())
+		g := pool.NewWithResults[int]().WithContext(context.Background())
 		g.Go(func(ctx context.Context) (int, error) {
 			select {
 			case <-ctx.Done():
@@ -146,7 +163,7 @@ func TestResultContextPool(t *testing.T) {
 
 	t.Run("WithCollectErrored", func(t *testing.T) {
 		t.Parallel()
-		g := NewWithResults[int]().WithContext(context.Background()).WithCollectErrored()
+		g := pool.NewWithResults[int]().WithContext(context.Background()).WithCollectErrored()
 		g.Go(func(context.Context) (int, error) { return 0, err1 })
 		res, err := g.Wait()
 		require.Len(t, res, 1) // errored value is collected
@@ -155,7 +172,7 @@ func TestResultContextPool(t *testing.T) {
 
 	t.Run("WithFirstError", func(t *testing.T) {
 		t.Parallel()
-		g := NewWithResults[int]().WithContext(context.Background()).WithFirstError()
+		g := pool.NewWithResults[int]().WithContext(context.Background()).WithFirstError()
 		sync := make(chan struct{})
 		g.Go(func(ctx context.Context) (int, error) {
 			defer close(sync)
@@ -186,7 +203,7 @@ func TestResultContextPool(t *testing.T) {
 
 				t.Parallel()
 				ctx := context.Background()
-				g := NewWithResults[int]().WithContext(ctx).WithMaxGoroutines(maxConcurrency)
+				g := pool.NewWithResults[int]().WithContext(ctx).WithMaxGoroutines(maxConcurrency)
 
 				var currentConcurrent atomic.Int64
 				taskCount := maxConcurrency * 10
@@ -205,11 +222,26 @@ func TestResultContextPool(t *testing.T) {
 					})
 				}
 				res, err := g.Wait()
-				sort.Ints(res)
 				require.Equal(t, expected, res)
 				require.NoError(t, err)
 				require.Equal(t, int64(0), currentConcurrent.Load())
 			})
 		}
+	})
+
+	t.Run("reuse", func(t *testing.T) {
+		// Test for https://github.com/sourcegraph/conc/issues/128
+		p := pool.NewWithResults[int]().WithContext(context.Background())
+
+		p.Go(func(context.Context) (int, error) { return 1, err1 })
+		results1, errs1 := p.Wait()
+		require.Empty(t, results1)
+		require.ErrorIs(t, errs1, err1)
+
+		p.Go(func(context.Context) (int, error) { return 2, err2 })
+		results2, errs2 := p.Wait()
+		require.Empty(t, results2)
+		require.ErrorIs(t, errs2, err2)
+		require.NotErrorIs(t, errs2, err1)
 	})
 }
