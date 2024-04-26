@@ -174,13 +174,13 @@ func TestForIterator_EachIdxErr(t *testing.T) {
 	t.Parallel()
 
 	t.Run("failFast=false", func(t *testing.T) {
-		it := Iterator[int]{MaxGoroutines: 999}
+		it := iter.Iterator[int]{MaxGoroutines: 999}
 		forEach := noIndex(it.ForEachIdxErr)
 		testForEachErr(t, false, forEach)
 	})
 
 	t.Run("failFast=true", func(t *testing.T) {
-		it := Iterator[int]{MaxGoroutines: 999}
+		it := iter.Iterator[int]{MaxGoroutines: 999}
 		forEach := noIndex(it.ForEachIdxErr)
 		testForEachErr(t, true, forEach)
 	})
@@ -190,7 +190,7 @@ func TestForIterator_EachIdxErr(t *testing.T) {
 
 		input := []int{1, 2, 3, 4, 5}
 		errTest := errors.New("test error")
-		iterator := Iterator[int]{MaxGoroutines: 1, FailFast: true}
+		iterator := iter.Iterator[int]{MaxGoroutines: 1, FailFast: true}
 
 		var mu sync.Mutex
 		var results []int
@@ -211,7 +211,7 @@ func TestForIterator_EachIdxErr(t *testing.T) {
 	t.Run("safe for reuse", func(t *testing.T) {
 		t.Parallel()
 
-		iterator := Iterator[int]{MaxGoroutines: 999}
+		iterator := iter.Iterator[int]{MaxGoroutines: 999}
 
 		// iter.Concurrency > numInput case that updates iter.Concurrency
 		_ = iterator.ForEachIdxErr([]int{1, 2, 3}, func(i int, t *int) error {
@@ -224,12 +224,12 @@ func TestForIterator_EachIdxErr(t *testing.T) {
 	t.Run("allows more than defaultMaxGoroutines() concurrent tasks", func(t *testing.T) {
 		t.Parallel()
 
-		wantConcurrency := 2 * defaultMaxGoroutines()
+		wantConcurrency := 2 * iter.DefaultMaxGoroutines()
 
 		maxConcurrencyHit := make(chan struct{})
 
 		tasks := make([]int, wantConcurrency)
-		iterator := Iterator[int]{MaxGoroutines: wantConcurrency}
+		iterator := iter.Iterator[int]{MaxGoroutines: wantConcurrency}
 
 		var concurrentTasks atomic.Int64
 		_ = iterator.ForEachIdxErr(tasks, func(_ int, t *int) error {
@@ -257,19 +257,19 @@ func TestForIterator_EachErr(t *testing.T) {
 	t.Parallel()
 
 	t.Run("failFast=false", func(t *testing.T) {
-		it := Iterator[int]{MaxGoroutines: 999}
+		it := iter.Iterator[int]{MaxGoroutines: 999}
 		testForEachErr(t, false, it.ForEachErr)
 	})
 
 	t.Run("failFast=true", func(t *testing.T) {
-		it := Iterator[int]{MaxGoroutines: 999}
+		it := iter.Iterator[int]{MaxGoroutines: 999}
 		testForEachErr(t, true, it.ForEachErr)
 	})
 
 	t.Run("safe for reuse", func(t *testing.T) {
 		t.Parallel()
 
-		iterator := Iterator[int]{MaxGoroutines: 999}
+		iterator := iter.Iterator[int]{MaxGoroutines: 999}
 
 		// iter.Concurrency > numInput case that updates iter.Concurrency
 		_ = iterator.ForEachErr([]int{1, 2, 3}, func(t *int) error {
@@ -284,7 +284,7 @@ func TestForIterator_EachErr(t *testing.T) {
 
 		input := []int{1, 2, 3, 4, 5}
 		errTest := errors.New("test error")
-		iterator := Iterator[int]{MaxGoroutines: 1, FailFast: true}
+		iterator := iter.Iterator[int]{MaxGoroutines: 1, FailFast: true}
 
 		var mu sync.Mutex
 		var results []int
@@ -305,12 +305,12 @@ func TestForIterator_EachErr(t *testing.T) {
 	t.Run("allows more than defaultMaxGoroutines() concurrent tasks", func(t *testing.T) {
 		t.Parallel()
 
-		wantConcurrency := 2 * defaultMaxGoroutines()
+		wantConcurrency := 2 * iter.DefaultMaxGoroutines()
 
 		maxConcurrencyHit := make(chan struct{})
 
 		tasks := make([]int, wantConcurrency)
-		iterator := Iterator[int]{MaxGoroutines: wantConcurrency}
+		iterator := iter.Iterator[int]{MaxGoroutines: wantConcurrency}
 
 		var concurrentTasks atomic.Int64
 		_ = iterator.ForEachErr(tasks, func(t *int) error {
@@ -338,7 +338,7 @@ func TestForEachIdxErr(t *testing.T) {
 	t.Parallel()
 
 	t.Run("standart", func(t *testing.T) {
-		forEach := noIndex(ForEachIdxErr[int])
+		forEach := noIndex(iter.ForEachIdxErr[int])
 		testForEachErr(t, false, forEach)
 	})
 
@@ -347,7 +347,7 @@ func TestForEachIdxErr(t *testing.T) {
 		got := []int{}
 		gotMu := sync.Mutex{}
 
-		err := ForEachIdxErr(ints, func(i int, _ *int) error {
+		err := iter.ForEachIdxErr(ints, func(i int, _ *int) error {
 			gotMu.Lock()
 			defer gotMu.Unlock()
 			got = append(got, i)
@@ -362,7 +362,7 @@ func TestForEachIdxErr(t *testing.T) {
 func TestForEachErr(t *testing.T) {
 	t.Parallel()
 
-	testForEachErr(t, false, ForEachErr[int])
+	testForEachErr(t, false, iter.ForEachErr[int])
 }
 
 // noIndex converts a ForEachIdxErr function (or method) into a ForEachErr function (or method).

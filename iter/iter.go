@@ -1,12 +1,12 @@
 package iter
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
 	"github.com/sourcegraph/conc"
-	"github.com/sourcegraph/conc/internal/multierror"
 )
 
 // defaultMaxGoroutines returns the default maximum number of
@@ -127,7 +127,7 @@ func (iter Iterator[T]) ForEachIdxErr(input []T, f func(int, *T) error) error {
 		iter.MaxGoroutines = numInput
 	}
 
-	var errs error
+	var errs []error
 	var errsMu sync.Mutex
 	var idx atomic.Int64
 	var failed atomic.Bool
@@ -137,9 +137,11 @@ func (iter Iterator[T]) ForEachIdxErr(input []T, f func(int, *T) error) error {
 		i := int(idx.Add(1) - 1)
 		for ; i < numInput && !failed.Load(); i = int(idx.Add(1) - 1) {
 			if err := f(i, &input[i]); err != nil {
-				errsMu.Lock()
-				errs = multierror.Join(errs, err)
-				errsMu.Unlock()
+				if alreadyFailedFast := failed.Swap(iter.FailFast); !alreadyFailedFast {
+					errsMu.Lock()
+					errs = append(errs, err)
+					errsMu.Unlock()
+				}
 
 				failed.Store(iter.FailFast)
 			}
@@ -152,5 +154,5 @@ func (iter Iterator[T]) ForEachIdxErr(input []T, f func(int, *T) error) error {
 	}
 	wg.Wait()
 
-	return errs
+	return errors.Join(errs...)
 }
