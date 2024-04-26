@@ -408,16 +408,6 @@ func testForEachErr(t *testing.T, failFast bool, forEach func([]int, func(*int) 
 		require.Equal(t, []int{2, 3, 4, 5, 6}, ints)
 	})
 
-	t.Run("mutating inputs is fine", func(t *testing.T) {
-		t.Parallel()
-		ints := []int{1, 2, 3, 4, 5}
-		_ = forEach(ints, func(val *int) error {
-			*val += 1
-			return nil
-		})
-		require.Equal(t, []int{2, 3, 4, 5, 6}, ints)
-	})
-
 	t.Run("returning errors", func(t *testing.T) {
 		t.Parallel()
 		ints := []int{1, 2, 3, 4, 5}
